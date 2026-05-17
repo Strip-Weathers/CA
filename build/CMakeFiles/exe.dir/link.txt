@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/exe.dir/src/main.cpp.o CMakeFiles/exe.dir/src/crypto_manager.cpp.o -o exe  /usr/lib/x86_64-linux-gnu/libssl.so /usr/lib/x86_64-linux-gnu/libcrypto.so 
