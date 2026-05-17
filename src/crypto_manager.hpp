@@ -6,17 +6,9 @@ public:
 
     static bool generateRSAKeyPair();
 
-    bool signFile(
-        const std::string& filePath,
-        const std::string& privateKeyPath,
-        const std::string& signaturePath
-    );
+    static bool signFile(const std::string& filePath);
 
-    bool verifyFile(
-        const std::string& filePath,
-        const std::string& publicKeyPath,
-        const std::string& signaturePath
-    );
+    static bool verifyFile(const std::string& filePath);
 
     bool encryptFileAES(
         const std::string& inputPath,

@@ -4,6 +4,8 @@
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
+#include <fstream>
+#include <vector>
 using namespace std;
 
 
@@ -67,4 +69,78 @@ bool CryptoManager::generateRSAKeyPair(){
     EVP_PKEY_CTX_free(ctx);
 
     return true;
+}
+
+vector<unsigned char> readFile(const string& path){
+    ifstream file(path, ios::binary);
+
+    return vector<unsigned char>(istreambuf_iterator<char>(file),{});
+}
+
+bool writeFile(const string& path, const vector<unsigned char>& data){
+    ofstream file(path, ios::binary);
+
+    if (!file) return false;
+
+    file.write(reinterpret_cast<const char*>(data.data()), data.size());
+
+    return true;
+}
+
+bool CryptoManager::signFile(const string& filePath)
+{
+    FILE* fp = fopen("keys/private.pem", "rb");
+    if (!fp) return false;
+
+    EVP_PKEY* privateKey = PEM_read_PrivateKey(fp, nullptr, nullptr, nullptr);
+
+    fclose(fp);
+
+    vector<unsigned char> fileData = readFile(filePath);
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+
+    EVP_DigestSignInit(ctx, nullptr, EVP_sha256(), nullptr, privateKey);
+
+    EVP_DigestSignUpdate(ctx, fileData.data(), fileData.size());
+
+    size_t sigLen = 0;
+
+    EVP_DigestSignFinal(ctx, nullptr, &sigLen);
+
+    vector<unsigned char> signature(sigLen);
+
+    EVP_DigestSignFinal(ctx, signature.data(), &sigLen);
+
+    writeFile("signature.sig", signature);
+
+    EVP_MD_CTX_free(ctx);
+    EVP_PKEY_free(privateKey);
+
+    return true;
+}
+
+bool CryptoManager::verifyFile(const string& filePath)
+{
+    FILE* fp = fopen("keys/public.pem", "rb");
+    if (!fp) return false;
+
+    EVP_PKEY* publicKey = PEM_read_PUBKEY(fp, nullptr, nullptr, nullptr);
+    fclose(fp);
+    vector<unsigned char> fileData = readFile(filePath);
+    vector<unsigned char> signature = readFile("signature.sig");
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+
+    EVP_DigestVerifyInit(ctx, nullptr, EVP_sha256(), nullptr, publicKey);
+
+    EVP_DigestVerifyUpdate(ctx, fileData.data(), fileData.size());
+
+    int result = EVP_DigestVerifyFinal(ctx, signature.data(), signature.size());
+
+    EVP_MD_CTX_free(ctx);
+    EVP_PKEY_free(publicKey);
+
+    if(result == 1) return true;
+    else return false;
 }
