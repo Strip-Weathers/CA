@@ -5,7 +5,13 @@
 using namespace std;
 int main(int argc, char* argv[]){
     if (argc < 2){
-        cout << "Usage: crypto_tool genkey\n";
+        cout << "Usage:\n";
+        cout << "  exe genkey\n";
+        cout << "  exe sign <file>\n";
+        cout << "  exe verify <file>\n";
+        cout << "  exe encrypt <file>\n";
+        cout << "  exe decrypt <file>\n";
+
         return 1;
     }
 
@@ -46,6 +52,47 @@ int main(int argc, char* argv[]){
         else{
             cout << "INVALID SIGNATURE\n";
         }
+    }
+
+        else if (command == "encrypt")
+    {
+        if (argc < 3)
+        {
+            cout << "Usage: exe encrypt <file>\n";
+            return 1;
+        }
+
+        if (CryptoManager::encryptFileAES(argv[2]))
+        {
+            cout << "Encryption successful\n";
+        }
+        else
+        {
+            cout << "Encryption failed\n";
+        }
+    }
+
+    else if (command == "decrypt")
+    {
+        if (argc < 3)
+        {
+            cout << "Usage: exe decrypt <file>\n";
+            return 1;
+        }
+
+        if (CryptoManager::decryptFileAES(argv[2]))
+        {
+            cout << "Decryption successful\n";
+        }
+        else
+        {
+            cout << "Decryption failed\n";
+        }
+    }
+
+    else
+    {
+        cout << "Unknown command\n";
     }
 
     return 0;

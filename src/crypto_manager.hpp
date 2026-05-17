@@ -10,13 +10,7 @@ public:
 
     static bool verifyFile(const std::string& filePath);
 
-    bool encryptFileAES(
-        const std::string& inputPath,
-        const std::string& outputPath
-    );
+    static bool encryptFileAES(const std::string& filePath);
 
-    bool decryptFileAES(
-        const std::string& inputPath,
-        const std::string& outputPath
-    );
+    static bool decryptFileAES(const std::string& filePath);
 };

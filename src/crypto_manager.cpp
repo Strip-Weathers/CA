@@ -6,6 +6,7 @@
 #include <openssl/err.h>
 #include <fstream>
 #include <vector>
+#include <openssl/rand.h>
 using namespace std;
 
 
@@ -143,4 +144,94 @@ bool CryptoManager::verifyFile(const string& filePath)
 
     if(result == 1) return true;
     else return false;
+}
+
+bool CryptoManager::encryptFileAES(const std::string& filePath){
+    vector<unsigned char> plaintext = readFile(filePath);
+
+    vector<unsigned char> key(32);
+    vector<unsigned char> iv(12);
+    vector<unsigned char> tag(16);
+
+    RAND_bytes(key.data(), key.size());
+    RAND_bytes(iv.data(), iv.size());
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+
+    EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr);
+
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv.size(), nullptr);
+
+    EVP_EncryptInit_ex(ctx, nullptr, nullptr, key.data(), iv.data());
+
+    vector<unsigned char> ciphertext(plaintext.size());
+
+    int len = 0;
+
+    EVP_EncryptUpdate(ctx, ciphertext.data(), &len, plaintext.data(), plaintext.size());
+
+    int ciphertextLen = len;
+
+    EVP_EncryptFinal_ex(ctx, ciphertext.data() + len, &len);
+
+    ciphertextLen += len;
+
+    ciphertext.resize(ciphertextLen);
+
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag.data());
+
+    EVP_CIPHER_CTX_free(ctx);
+
+    vector<unsigned char> output;
+
+    output.insert(output.end(), iv.begin(), iv.end());
+    output.insert(output.end(), tag.begin(), tag.end());
+    output.insert(output.end(), ciphertext.begin(), ciphertext.end());
+
+    writeFile("encrypted.data", output);
+    writeFile("aes.key", key);
+
+    return true;
+}
+
+
+bool CryptoManager::decryptFileAES(const std::string& filePath){
+    vector<unsigned char> encrypted = readFile(filePath);
+    vector<unsigned char> key = readFile("aes.key");
+    vector<unsigned char> iv(encrypted.begin(), encrypted.begin() + 12);
+    vector<unsigned char> tag(encrypted.begin() + 12, encrypted.begin() + 28);
+
+    vector<unsigned char> ciphertext(encrypted.begin() + 28, encrypted.end());
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+
+    EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr);
+
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv.size(), nullptr);
+
+    EVP_DecryptInit_ex(ctx, nullptr, nullptr, key.data(), iv.data());
+
+    vector<unsigned char> plaintext(ciphertext.size());
+
+    int len = 0;
+
+    EVP_DecryptUpdate(ctx, plaintext.data(), &len, ciphertext.data(), ciphertext.size());
+
+    int plaintextLen = len;
+
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag.data());
+
+    int result = EVP_DecryptFinal_ex(ctx, plaintext.data() + len, &len);
+
+    EVP_CIPHER_CTX_free(ctx);
+
+    if (result <= 0) return false;
+
+    plaintextLen += len;
+
+    plaintext.resize(plaintextLen);
+
+    writeFile("decrypted.txt", plaintext);
+
+    return true;
 }
