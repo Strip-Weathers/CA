@@ -1,3 +1,0 @@
-/home/wojtek/git/CA/build/CMakeFiles/exe.dir
-/home/wojtek/git/CA/build/CMakeFiles/edit_cache.dir
-/home/wojtek/git/CA/build/CMakeFiles/rebuild_cache.dir
