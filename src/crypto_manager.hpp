@@ -2,17 +2,16 @@
 
 #include <string>
 #include <vector>
-
 class CryptoManager {
 public:
 
     static bool generateRSAKeyPair(const std::string& privateKeyPath, const std::string& publicKeyPath);
 
+    static bool load_users(const std::string& user_1, const std::string& user_2);
+
     static bool generateCAKeyPair();
 
     static bool signPublicKey(const std::string& userPublicKeyPath, const std::string& outputCertPath);
-
-    static bool verifyCertificate(const std::string& userPublicKeyPath, const std::string& certPath, const std::string& caPublicKeyPath);
 
     static bool signFile(const std::string& filePath, const std::string& privateKeyPath, const std::string& signaturePath);
 
@@ -30,7 +29,7 @@ public:
 
     static bool receiveMessage(const std::string& receiverName);
 
-    static bool gatewaySend(const std::string& filePath);
+    static bool verifyCertificate(const std::string& userPublicKeyPath, const std::string& certPath, const std::string& caPublicKeyPath);
 
     static std::vector<unsigned char> readFile(const std::string& path);
     static bool writeFile(const std::string& path, const std::vector<unsigned char>& data);

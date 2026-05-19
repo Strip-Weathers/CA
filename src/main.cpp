@@ -1,11 +1,11 @@
 #include "crypto_manager.hpp"
 #include <iostream>
 #include <string>
-
+#include <filesystem>
 using namespace std;
-
+std::string user_1, user_2;
 void waitStep() {
-    cout << "\n>>> wpisz 'next' aby kontynuować: ";
+    cout << "\n>>> next <<<";
     string cmd;
     cin >> cmd;
 }
@@ -13,137 +13,118 @@ void waitStep() {
 int main(int argc, char* argv[]) {
 
     if (argc < 2) {
-        cout << "Usage: exe demo|send|receive\n";
+        cout << "Usage: exe demo\n";
         return 1;
     }
 
     string mode = argv[1];
-
-    // ================= DEMO FLOW =================
     if (mode == "demo") {
-
-        cout << "\n========== PKI DEMO FLOW ==========\n";
 
         waitStep();
 
-        // =================================================
-        // 1. CA
-        // =================================================
         cout << "\n[1] CA KEYGEN\n";
         CryptoManager::generateCAKeyPair();
         waitStep();
 
-        // =================================================
-        // 2. USER KEYS (SPÓJNE NAZWY)
-        // =================================================
+        cout << "\n PODAJ IMIE SENDERA\n";
+        cin >> user_1;
+        cout << "\n PODAJ IMIE RECEIVERA\n";
+        cin >> user_2;
+        CryptoManager::load_users(user_1, user_2);
         cout << "\n[2] USER KEYGEN\n";
-        CryptoManager::generateRSAKeyPair(
-            "keys/alice_private.pem",
-            "keys/alice_public.pem"
-        );
+        filesystem::create_directories(user_1);
+        filesystem::create_directories(user_2);
+        filesystem::create_directories("ca");
+        filesystem::create_directories("build");
+        filesystem::create_directories(user_2 + "/inbox");
 
         CryptoManager::generateRSAKeyPair(
-            "keys/bob_private.pem",
-            "keys/bob_public.pem"
+            user_1 + "/" + user_1 + "_private.pem",
+            user_1 + "/" + user_1 + "_public.pem"
+        );
+        CryptoManager::generateRSAKeyPair(
+            user_2 + "/" + user_2 + "_private.pem",
+            user_2 + "/" + user_2 + "_public.pem"
         );
         waitStep();
 
-        // =================================================
-        // 3. CERT
-        // =================================================
-        cout << "\n[3] CA SIGN CERT\n";
-        CryptoManager::signPublicKey(
-            "keys/alice_public.pem",
-            "keys/alice.cert"
-        );
-        CryptoManager::signPublicKey(
-            "keys/bob_public.pem",
-            "keys/bob.cert"
-        );
+
+        cout << "\n[3] CA SIGN CERT (REQUEST)\n";
+        int git = 1;
+        auto requestCert = [&](const std::string& user){
+
+            cout << "\n========== CA REQUEST ==========\n";
+            cout << "[CA] Incoming certificate request from: " << user << "\n";
+            cout << "[CA] Public key: " << user << "_public.pem\n";
+
+            cout << "[CA] Approve certificate for " << user << "? (y/n): ";
+
+            std::string decision;
+            cin >> decision;
+
+            if (decision != "y"){
+                cout << "[CA] Request REJECTED for " << user << "\n";
+                git = 0;
+                return;
+            }
+
+            cout << "[CA] Signing certificate for " << user << "...\n";
+
+            bool ok = CryptoManager::signPublicKey(
+                user + "/" + user + "_public.pem",
+                user + "/" + user + ".cert"
+            );
+
+            if (!ok){
+                cout << "[CA] Signing FAILED for " << user << "\n";
+                return;
+            }
+
+            cout << "[CA] Certificate ISSUED for " << user << "\n";
+        };
+        requestCert(user_1);
+        if (!git) {
+            std::filesystem::remove_all(user_1);
+            std::filesystem::remove_all(user_2);
+            std::filesystem::remove_all("inbox");
+            std::filesystem::remove_all("data");
+            return 1;}
+        requestCert(user_2);
+        if (!git) {
+            std::filesystem::remove_all(user_1);
+            std::filesystem::remove_all(user_2);
+            std::filesystem::remove_all("inbox");
+            std::filesystem::remove_all("data");
+            return 1;}
         waitStep();
 
-        // =================================================
-        // 4. VERIFY CERT
-        // =================================================
-        cout << "\n[4] VERIFY CERT\n";
-        CryptoManager::verifyCertificate(
-            "keys/alice_public.pem",
-            "keys/alice.cert",
-            "ca/certs/ca_public.pem"
-        );
-        waitStep();
-
-        // =================================================
-        // 5. SIGN FILE
-        // =================================================
-        cout << "\n[5] SIGN FILE\n";
+        cout << "\n[4] SIGN FILE\n";
         CryptoManager::signFile(
-            "message.txt",
-            "keys/alice_private.pem",
-            "signature.sig"
+            user_1 + "/" + "message.txt",
+            user_1 + "/" + user_1 + "_private.pem",
+            user_1 + "/" + "signature.sig"
         );
         waitStep();
 
-        // =================================================
-        // 6. VERIFY FILE
-        // =================================================
-        cout << "\n[6] VERIFY FILE\n";
-        CryptoManager::verifyFile(
-            "message.txt",
-            "keys/alice_public.pem",
-            "signature.sig"
-        );
-        waitStep();
 
-        // =================================================
-        // 7. SEND MESSAGE (HYBRID)
-        // =================================================
-        cout << "\n[7] SEND MESSAGE\n";
+        cout << "\n[5] SEND MESSAGE\n";
         CryptoManager::sendMessage(
-            "alice",
-            "bob",
-            "message.txt"
+            user_1,
+            user_2,
+            user_1 + "/" + "message.txt"
         );
         waitStep();
 
-        // =================================================
-        // 8. GATEWAY (opcjonalnie ale logiczne)
-        // =================================================
-        cout << "\n[8] GATEWAY CHECK\n";
-        CryptoManager::gatewaySend("outbox/alice_to_bob.bin");
-        waitStep();
 
-        // =================================================
-        // 9. RECEIVE MESSAGE
-        // =================================================
-        cout << "\n[9] RECEIVE MESSAGE\n";
-        CryptoManager::receiveMessage("bob");
+        cout << "\n[6] RECEIVE MESSAGE\n";
+        CryptoManager::receiveMessage(user_2);
 
         cout << "\n========== END DEMO ==========\n";
-        return 0;
-    }
-
-    // ================= SEND =================
-    if (mode == "send") {
-
-        if (argc < 3) {
-            cout << "Usage: exe send <file>\n";
-            return 1;
-        }
-
-        CryptoManager::sendMessage(
-            "alice",
-            "bob",
-            argv[2]
-        );
-
-        return 0;
-    }
-
-    // ================= RECEIVE =================
-    if (mode == "receive") {
-
-        CryptoManager::receiveMessage("bob");
+        waitStep();
+        std::filesystem::remove_all(user_1);
+        std::filesystem::remove_all(user_2);
+        std::filesystem::remove_all("inbox");
+        std::filesystem::remove_all("data");
         return 0;
     }
 

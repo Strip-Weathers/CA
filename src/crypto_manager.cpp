@@ -9,6 +9,13 @@
 #include <openssl/rand.h>
 using namespace std;
 
+string user1, user2;
+
+bool CryptoManager::load_users(const std::string& user_1, const std::string& user_2){
+user1 = user_1;
+user2 = user_2;
+return 1;
+}
 
 bool CryptoManager::generateRSAKeyPair(
     const std::string& privateKeyPath,
@@ -123,7 +130,6 @@ bool CryptoManager::signFile(
 ){
     cout << "\n[SIGN] Signing file...\n";
 
-    // 1. Load file data
     vector<unsigned char> fileData = readFile(filePath);
 
     if (fileData.empty()){
@@ -131,7 +137,6 @@ bool CryptoManager::signFile(
         return false;
     }
 
-    // 2. Load private key
     FILE* fp = fopen(privateKeyPath.c_str(), "rb");
 
     if (!fp){
@@ -150,7 +155,6 @@ bool CryptoManager::signFile(
         return false;
     }
 
-    // 3. Create signing context
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
 
     if (!ctx){
@@ -159,7 +163,6 @@ bool CryptoManager::signFile(
         return false;
     }
 
-    // 4. Initialize signing
     if (EVP_DigestSignInit(
             ctx,
             nullptr,
@@ -177,7 +180,6 @@ bool CryptoManager::signFile(
         return false;
     }
 
-    // 5. Feed file data
     if (EVP_DigestSignUpdate(
             ctx,
             fileData.data(),
@@ -193,7 +195,6 @@ bool CryptoManager::signFile(
         return false;
     }
 
-    // 6. Get signature size
     size_t sigLen = 0;
 
     if (EVP_DigestSignFinal(
@@ -211,10 +212,8 @@ bool CryptoManager::signFile(
         return false;
     }
 
-    // 7. Allocate signature buffer
     vector<unsigned char> signature(sigLen);
 
-    // 8. Generate signature
     if (EVP_DigestSignFinal(
             ctx,
             signature.data(),
@@ -232,7 +231,6 @@ bool CryptoManager::signFile(
 
     signature.resize(sigLen);
 
-    // 9. Save signature
     if (!writeFile(signaturePath, signature)){
         cerr << "[ERROR] Cannot save signature file\n";
 
@@ -242,7 +240,6 @@ bool CryptoManager::signFile(
         return false;
     }
 
-    // 10. Cleanup
     EVP_MD_CTX_free(ctx);
     EVP_PKEY_free(privateKey);
 
@@ -250,77 +247,6 @@ bool CryptoManager::signFile(
     cout << "[INFO] Signature -> " << signaturePath << "\n";
 
     return true;
-}
-
-bool CryptoManager::verifyCertificate(
-    const std::string& userPublicKeyPath,
-    const std::string& certPath,
-    const std::string& caPublicKeyPath
-){
-    cout << "\n[CA VERIFY] Verifying certificate...\n";
-
-    // 1. load user public key (DATA which was signed by CA)
-    vector<unsigned char> userPub = readFile(userPublicKeyPath);
-    if (userPub.empty()){
-        cout << "[ERROR] User public key is empty\n";
-        return false;
-    }
-
-    // 2. load certificate (signature of user public key)
-    vector<unsigned char> certSig = readFile(certPath);
-    if (certSig.empty()){
-        cout << "[ERROR] Certificate file is empty\n";
-        return false;
-    }
-
-    // 3. load CA public key
-    FILE* fp = fopen(caPublicKeyPath.c_str(), "rb");
-    if (!fp){
-        cout << "[ERROR] Cannot open CA public key\n";
-        return false;
-    }
-
-    EVP_PKEY* caPub = PEM_read_PUBKEY(fp, nullptr, nullptr, nullptr);
-    fclose(fp);
-
-    if (!caPub){
-        cout << "[ERROR] Invalid CA public key\n";
-        return false;
-    }
-
-    // 4. verify signature (CA verifies user public key)
-    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-    if (!ctx){
-        EVP_PKEY_free(caPub);
-        return false;
-    }
-
-    if (EVP_DigestVerifyInit(ctx, nullptr, EVP_sha256(), nullptr, caPub) <= 0){
-        cout << "[ERROR] DigestVerifyInit failed\n";
-        EVP_MD_CTX_free(ctx);
-        EVP_PKEY_free(caPub);
-        return false;
-    }
-
-    if (EVP_DigestVerifyUpdate(ctx, userPub.data(), userPub.size()) <= 0){
-        cout << "[ERROR] DigestVerifyUpdate failed\n";
-        EVP_MD_CTX_free(ctx);
-        EVP_PKEY_free(caPub);
-        return false;
-    }
-
-    int ok = EVP_DigestVerifyFinal(ctx, certSig.data(), certSig.size());
-
-    EVP_MD_CTX_free(ctx);
-    EVP_PKEY_free(caPub);
-
-    if (ok == 1){
-        cout << "[OK] CERTIFICATE VALID\n";
-        return true;
-    }
-
-    cout << "[ERROR] INVALID CERTIFICATE\n";
-    return false;
 }
 
 bool CryptoManager::encryptFileAES(
@@ -336,7 +262,6 @@ bool CryptoManager::encryptFileAES(
         return false;
     }
 
-    // 1. generate AES key + IV + TAG
     vector<unsigned char> key(32);
     vector<unsigned char> iv(12);
     vector<unsigned char> tag(16);
@@ -347,7 +272,6 @@ bool CryptoManager::encryptFileAES(
         return false;
     }
 
-    // 2. encrypt
     EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
     if (!ctx){
         cout << "[ERROR] EVP_CIPHER_CTX_new failed\n";
@@ -403,7 +327,6 @@ bool CryptoManager::encryptFileAES(
     totalLen += len;
     ciphertext.resize(totalLen);
 
-    // get tag
     if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag.data()) != 1){
         cout << "[ERROR] GET_TAG failed\n";
         EVP_CIPHER_CTX_free(ctx);
@@ -412,7 +335,6 @@ bool CryptoManager::encryptFileAES(
 
     EVP_CIPHER_CTX_free(ctx);
 
-    // 3. build output packet: IV + TAG + CIPHERTEXT
     vector<unsigned char> output;
     output.reserve(iv.size() + tag.size() + ciphertext.size());
 
@@ -420,13 +342,11 @@ bool CryptoManager::encryptFileAES(
     output.insert(output.end(), tag.begin(), tag.end());
     output.insert(output.end(), ciphertext.begin(), ciphertext.end());
 
-    // 4. write encrypted file
     if (!writeFile(encryptedPath, output)){
         cout << "[ERROR] Cannot write encrypted file\n";
         return false;
     }
 
-    // 5. IMPORTANT: AES KEY SAVE (for hybrid encryption)
     if (!writeFile(aesKeyPath, key)){
         cout << "[ERROR] Cannot save AES key\n";
         return false;
@@ -454,12 +374,10 @@ bool CryptoManager::decryptFileAES(
         return false;
     }
 
-    // 1. parse packet: IV | TAG | CIPHERTEXT
     vector<unsigned char> iv(encrypted.begin(), encrypted.begin() + 12);
     vector<unsigned char> tag(encrypted.begin() + 12, encrypted.begin() + 28);
     vector<unsigned char> ciphertext(encrypted.begin() + 28, encrypted.end());
 
-    // 2. load AES key (already decrypted via RSA step)
     vector<unsigned char> key = readFile(aesKeyPath);
 
     if (key.size() != 32){
@@ -467,7 +385,6 @@ bool CryptoManager::decryptFileAES(
         return false;
     }
 
-    // 3. init OpenSSL context
     EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
     if (!ctx){
         cout << "[ERROR] EVP_CIPHER_CTX_new failed\n";
@@ -492,7 +409,6 @@ bool CryptoManager::decryptFileAES(
         return false;
     }
 
-    // 4. decrypt
     vector<unsigned char> plaintext(ciphertext.size());
 
     int len = 0;
@@ -512,7 +428,6 @@ bool CryptoManager::decryptFileAES(
 
     totalLen = len;
 
-    // 5. IMPORTANT: set TAG BEFORE final
     if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag.data()) != 1){
         cout << "[ERROR] SET_TAG failed\n";
         EVP_CIPHER_CTX_free(ctx);
@@ -531,7 +446,6 @@ bool CryptoManager::decryptFileAES(
     totalLen += len;
     plaintext.resize(totalLen);
 
-    // 6. write output
     if (!writeFile(outputPath, plaintext)){
         cout << "[ERROR] Cannot write output file\n";
         return false;
@@ -559,7 +473,6 @@ bool CryptoManager::signPublicKey(
     cout << "\n========== CA ==========\n";
     cout << "[CA] Signing user public key...\n";
 
-    // 1. Load CA private key
     FILE* caFile = fopen("ca/private/ca_private.pem", "rb");
     if (!caFile){
         cerr << "[ERROR] Cannot open CA private key\n";
@@ -574,7 +487,6 @@ bool CryptoManager::signPublicKey(
         return false;
     }
 
-    // 2. Load user public key (RAW bytes of PEM)
     vector<unsigned char> pubKey = readFile(userPublicKeyPath);
 
     if (pubKey.empty()){
@@ -583,7 +495,6 @@ bool CryptoManager::signPublicKey(
         return false;
     }
 
-    // 3. Create signing context
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
     if (!ctx){
         cerr << "[ERROR] Cannot create digest context\n";
@@ -599,7 +510,6 @@ bool CryptoManager::signPublicKey(
         return false;
     }
 
-    // 4. Sign user public key bytes
     if (EVP_DigestSignUpdate(ctx, pubKey.data(), pubKey.size()) <= 0){
         cerr << "[ERROR] DigestSignUpdate failed\n";
         ERR_print_errors_fp(stderr);
@@ -630,13 +540,7 @@ bool CryptoManager::signPublicKey(
 
     signature.resize(sigLen);
 
-    // 5. Ensure output directory exists
-    filesystem::path certPath(outputCertPath);
-    if (!certPath.parent_path().empty()){
-        filesystem::create_directories(certPath.parent_path());
-    }
 
-    // 6. Save certificate (signature over public key)
     if (!writeFile(outputCertPath, signature)){
         cerr << "[ERROR] Cannot save certificate\n";
         EVP_MD_CTX_free(ctx);
@@ -653,7 +557,7 @@ bool CryptoManager::signPublicKey(
 
     return true;
 }
-
+#include <filesystem>
 bool CryptoManager::sendMessage(
     const std::string& senderName,
     const std::string& receiverName,
@@ -662,28 +566,24 @@ bool CryptoManager::sendMessage(
     cout << "\n========== SENDER ==========\n";
 
     string encryptedPath =
-        "outbox/" + senderName + "_to_" +
-        receiverName + ".bin";
+        user1 + "/message.bin";
 
     string aesKeyPath =
-        "temp/" + senderName + "_aes.key";
+        user1 + "/" + senderName + "_aes.key";
 
     string encryptedKeyPath =
-        "outbox/" + senderName + "_to_" +
+        user1 + "/" + senderName + "_to_" +
         receiverName + ".key.enc";
 
-    string signaturePath =
-        encryptedPath + ".sig";
+    string certPath =
+        user2 + "/inbox/" + senderName + ".cert";
 
-    // receiver public key
     string receiverPubKey =
-        "keys/" + receiverName + "_public.pem";
+        user2 + "/" + receiverName + "_public.pem";
 
-    // sender private key
     string senderPrivKey =
-        "keys/" + senderName + "_private.pem";
+        user1 + "/" + senderName + "_private.pem";
 
-    // 1. AES encrypt message
     if (!encryptFileAES(
             messagePath,
             encryptedPath,
@@ -692,20 +592,10 @@ bool CryptoManager::sendMessage(
         return false;
     }
 
-    // 2. Encrypt AES key using receiver RSA pub
     if (!encryptAESKey(
             aesKeyPath,
             receiverPubKey,
             encryptedKeyPath
-        )){
-        return false;
-    }
-
-    // 3. Sign encrypted message
-    if (!signFile(
-            encryptedPath,
-            senderPrivKey,
-            signaturePath
         )){
         return false;
     }
@@ -718,10 +608,194 @@ bool CryptoManager::sendMessage(
     cout << "[INFO] Encrypted AES key -> "
          << encryptedKeyPath << endl;
 
-    cout << "[INFO] Signature -> "
-         << signaturePath << endl;
+    string senderPubKey =
+        user1 + "/" + senderName + "_public.pem";
+
+    filesystem::create_directories("inbox");
+
+    cout << "[FORWARDED] Message forwarded ( " << user1 << " -> " << user2 << " )\n";
+
+    try
+    {
+        filesystem::copy_file(
+            user1 + "/" + senderName + ".cert",
+            certPath,
+            filesystem::copy_options::overwrite_existing
+        );
+
+        std::cout << "File copied\n";
+    }
+    catch (const filesystem::filesystem_error& e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+    try
+    {
+        filesystem::copy_file(
+            encryptedPath,
+            user2 + "/inbox/message.bin",
+            filesystem::copy_options::overwrite_existing
+        );
+
+        std::cout << "File copied\n";
+    }
+    catch (const filesystem::filesystem_error& e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+    try
+    {
+        filesystem::copy_file(
+            encryptedKeyPath,
+            user2 + "/inbox/" + senderName + "_to_" + receiverName + ".key.enc",
+            filesystem::copy_options::overwrite_existing
+        );
+
+        std::cout << "File copied\n";
+    }
+    catch (const filesystem::filesystem_error& e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+        try
+    {
+        filesystem::copy_file(
+            user1 + "/signature.sig",
+            user2 + "/inbox/signature.sig",
+            filesystem::copy_options::overwrite_existing
+        );
+
+        std::cout << "Signature sent\n";
+    }
+    catch (const filesystem::filesystem_error& e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+
+            try
+    {
+        filesystem::copy_file(
+            senderPubKey,
+            user2 + "/inbox/" + senderName + "_public.pem",
+            filesystem::copy_options::overwrite_existing
+        );
+
+        std::cout << "Signature sent\n";
+    }
+    catch (const filesystem::filesystem_error& e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+        
+    cout << "[INFO] Sender Cert -> "
+         << certPath << endl;
 
     return true;
+}
+
+bool CryptoManager::verifyCertificate(
+    const std::string& userPublicKeyPath,
+    const std::string& certPath,
+    const std::string& caPublicKeyPath
+){
+    cout << "\n[CA VERIFY] Verifying certificate...\n";
+
+    vector<unsigned char> userPubKey =
+        readFile(userPublicKeyPath);
+
+    if (userPubKey.empty()){
+        cerr << "[ERROR] User public key missing\n";
+        return false;
+    }
+
+    vector<unsigned char> certSignature =
+        readFile(certPath);
+
+    if (certSignature.empty()){
+        cerr << "[ERROR] Certificate missing\n";
+        return false;
+    }
+    FILE* fp = fopen(caPublicKeyPath.c_str(), "rb");
+
+    if (!fp){
+        cerr << "[ERROR] Cannot open CA public key\n";
+        return false;
+    }
+
+    EVP_PKEY* caPublicKey =
+        PEM_read_PUBKEY(fp, nullptr, nullptr, nullptr);
+
+    fclose(fp);
+
+    if (!caPublicKey){
+        cerr << "[ERROR] Cannot load CA public key\n";
+        ERR_print_errors_fp(stderr);
+        return false;
+    }
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+
+    if (!ctx){
+        cerr << "[ERROR] EVP_MD_CTX_new failed\n";
+        EVP_PKEY_free(caPublicKey);
+        return false;
+    }
+
+    bool valid = false;
+
+    if (EVP_DigestVerifyInit(
+            ctx,
+            nullptr,
+            EVP_sha256(),
+            nullptr,
+            caPublicKey
+        ) != 1)
+    {
+        cerr << "[ERROR] DigestVerifyInit failed\n";
+        ERR_print_errors_fp(stderr);
+    }
+
+    else if (EVP_DigestVerifyUpdate(
+                ctx,
+                userPubKey.data(),
+                userPubKey.size()
+            ) != 1)
+    {
+        cerr << "[ERROR] DigestVerifyUpdate failed\n";
+        ERR_print_errors_fp(stderr);
+    }
+
+    else
+    {
+        int result = EVP_DigestVerifyFinal(
+            ctx,
+            certSignature.data(),
+            certSignature.size()
+        );
+
+        if (result == 1)
+        {
+            valid = true;
+        }
+        else if (result == 0)
+        {
+            cerr << "[ERROR] INVALID CERTIFICATE\n";
+        }
+        else
+        {
+            cerr << "[ERROR] Certificate verification failed\n";
+            ERR_print_errors_fp(stderr);
+        }
+    }
+
+    EVP_MD_CTX_free(ctx);
+    EVP_PKEY_free(caPublicKey);
+
+    if (valid){
+        cout << "[OK] Certificate is VALID\n";
+    }
+
+    return valid;
 }
 
 bool CryptoManager::receiveMessage(
@@ -729,46 +803,31 @@ bool CryptoManager::receiveMessage(
 ){
     cout << "\n========== RECEIVER ==========\n";
 
-    string senderName = "alice";
+    string senderName = user1;
 
     string encryptedPath =
-        "outbox/" + senderName +
-        "_to_" + receiverName + ".bin";
+        user2 + "/inbox/message.bin";
 
     string encryptedKeyPath =
-        "outbox/" + senderName +
+        user2 + "/inbox/" + senderName +
         "_to_" + receiverName + ".key.enc";
 
     string signaturePath =
-        encryptedPath + ".sig";
+        user2 + "/inbox/signature.sig";
 
     string senderPubKey =
-        "keys/" + senderName + "_public.pem";
+        user1 + "/" + senderName + "_public.pem";
 
     string receiverPrivKey =
-        "keys/" + receiverName + "_private.pem";
+        user2 + "/" + receiverName + "_private.pem";
 
     string decryptedAES =
-        "temp/decrypted_aes.key";
+        user2 + "/inbox/decrypted_aes.key";
 
     string outputPath =
-        "inbox/decrypted_message.txt";
+        user2 + "/inbox/message.txt";
 
-    // 1. VERIFY SIGNATURE
-    bool valid = verifyFile(
-        encryptedPath,
-        senderPubKey,
-        signaturePath
-    );
 
-    if (!valid){
-        cout << "[ERROR] INVALID SIGNATURE\n";
-        return false;
-    }
-
-    cout << "[OK] Signature valid\n";
-
-    // 2. DECRYPT AES KEY
     if (!decryptAESKey(
             encryptedKeyPath,
             receiverPrivKey,
@@ -777,7 +836,6 @@ bool CryptoManager::receiveMessage(
         return false;
     }
 
-    // 3. DECRYPT MESSAGE
     if (!decryptFileAES(
             encryptedPath,
             decryptedAES,
@@ -791,6 +849,29 @@ bool CryptoManager::receiveMessage(
     cout << "[INFO] Output -> "
          << outputPath << endl;
 
+
+    bool valid = verifyFile(
+        outputPath,
+        senderPubKey,
+        signaturePath
+    );
+
+    if (!valid){
+        cout << "[ERROR] INVALID SIGNATURE\n";
+        return false;
+    }
+    cout << "[OK] Signature valid\n";
+
+    bool valid2 = verifyCertificate(
+    user2 + "/inbox/" + user1 + "_public.pem",
+    user2 + "/inbox/" + user1 + ".cert",
+    "ca/certs/ca_public.pem"
+    );
+    if (!valid2){
+        cout << "[ERROR] INVALID SENDER CERT\n";
+        return false;
+    }
+    cout << "[OK] Sender cert valid\n";
     return true;
 }
 
@@ -919,49 +1000,6 @@ bool CryptoManager::decryptAESKey(
     return true;
 }
 
-bool CryptoManager::gatewaySend(const std::string& filePath)
-{
-    cout << "\n========== GATEWAY ==========\n";
-
-    // 🔥 HARDCODE DEMO (Alice → Bob)
-    string senderName = "alice";
-    string receiverName = "bob";
-
-    string signaturePath = filePath + ".sig";
-
-    string senderPubKey =
-        "keys/" + senderName + "_public.pem";
-
-    // 1. VERIFY SIGNATURE
-    if (!verifyFile(filePath, senderPubKey, signaturePath))
-    {
-        cout << "[REJECTED] Invalid signature\n";
-        return false;
-    }
-
-    cout << "[OK] Packet valid -> forwarding\n";
-
-    filesystem::create_directories("inbox");
-
-    // 2. forward encrypted message
-    filesystem::copy_file(
-        filePath,
-        "inbox/message.bin",
-        filesystem::copy_options::overwrite_existing
-    );
-
-    // 3. forward signature
-    filesystem::copy_file(
-        signaturePath,
-        "inbox/message.bin.sig",
-        filesystem::copy_options::overwrite_existing
-    );
-
-    cout << "[FORWARDED] Message forwarded (Alice -> Bob)\n";
-
-    return true;
-}
-
 bool CryptoManager::encryptAESKey(
     const std::string& aesKeyPath,
     const std::string& receiverPublicKeyPath,
@@ -969,7 +1007,6 @@ bool CryptoManager::encryptAESKey(
 ){
     cout << "\n[HYBRID] Encrypting AES key...\n";
 
-    // 1. Load AES key
     vector<unsigned char> aesKey = readFile(aesKeyPath);
 
     if (aesKey.empty()){
@@ -977,7 +1014,6 @@ bool CryptoManager::encryptAESKey(
         return false;
     }
 
-    // 2. Load receiver public key
     FILE* fp = fopen(receiverPublicKeyPath.c_str(), "rb");
     if (!fp){
         cerr << "[ERROR] Cannot open receiver public key\n";
@@ -992,7 +1028,6 @@ bool CryptoManager::encryptAESKey(
         return false;
     }
 
-    // 3. Create encryption context
     EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(pubKey, nullptr);
     if (!ctx){
         cerr << "[ERROR] EVP_PKEY_CTX_new failed\n";
@@ -1007,7 +1042,6 @@ bool CryptoManager::encryptAESKey(
         return false;
     }
 
-    // 4. OAEP padding (recommended)
     if (EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_OAEP_PADDING) <= 0){
         cerr << "[ERROR] OAEP padding setup failed\n";
         EVP_PKEY_CTX_free(ctx);
@@ -1015,7 +1049,6 @@ bool CryptoManager::encryptAESKey(
         return false;
     }
 
-    // 5. Determine output size
     size_t outLen = 0;
 
     if (EVP_PKEY_encrypt(
@@ -1032,7 +1065,6 @@ bool CryptoManager::encryptAESKey(
         return false;
     }
 
-    // 6. Encrypt AES key
     vector<unsigned char> encryptedKey(outLen);
 
     if (EVP_PKEY_encrypt(
@@ -1051,7 +1083,6 @@ bool CryptoManager::encryptAESKey(
 
     encryptedKey.resize(outLen);
 
-    // 7. Save result
     if (!writeFile(encryptedKeyPath, encryptedKey)){
         cerr << "[ERROR] Cannot write encrypted AES key\n";
         EVP_PKEY_CTX_free(ctx);
@@ -1074,7 +1105,6 @@ bool CryptoManager::verifyFile(
 ){
     cout << "\n[VERIFY] Verifying digital signature...\n";
 
-    // 1. Load message/file
     vector<unsigned char> fileData = readFile(filePath);
 
     if (fileData.empty()){
@@ -1082,7 +1112,6 @@ bool CryptoManager::verifyFile(
         return false;
     }
 
-    // 2. Load signature
     vector<unsigned char> signature = readFile(signaturePath);
 
     if (signature.empty()){
@@ -1090,7 +1119,6 @@ bool CryptoManager::verifyFile(
         return false;
     }
 
-    // 3. Load public key
     FILE* fp = fopen(publicKeyPath.c_str(), "rb");
 
     if (!fp){
@@ -1109,7 +1137,6 @@ bool CryptoManager::verifyFile(
         return false;
     }
 
-    // 4. Create verify context
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
 
     if (!ctx){
@@ -1120,7 +1147,6 @@ bool CryptoManager::verifyFile(
 
     bool valid = false;
 
-    // 5. Initialize verification
     if (EVP_DigestVerifyInit(
             ctx,
             nullptr,
@@ -1133,7 +1159,6 @@ bool CryptoManager::verifyFile(
         ERR_print_errors_fp(stderr);
     }
 
-    // 6. Feed message data
     else if (EVP_DigestVerifyUpdate(
                 ctx,
                 fileData.data(),
@@ -1144,7 +1169,6 @@ bool CryptoManager::verifyFile(
         ERR_print_errors_fp(stderr);
     }
 
-    // 7. Verify signature
     else
     {
         int result = EVP_DigestVerifyFinal(
@@ -1169,7 +1193,6 @@ bool CryptoManager::verifyFile(
         }
     }
 
-    // 8. Cleanup
     EVP_MD_CTX_free(ctx);
     EVP_PKEY_free(publicKey);
 
