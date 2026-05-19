@@ -114,9 +114,17 @@ int main(int argc, char* argv[]) {
             user_1 + "/" + "message.txt"
         );
         waitStep();
+        cout << "\n[6] GEN TIMESTAMP\n";
+        cout << "Request timestamp creation...\n";
+        cout << "[TSA] Creating timestamp...\n";
+        cout << "Timestamp received...\n";
+        CryptoManager::createTimestamp(
+            user_1 + "/message.txt",
+            "tsa/private.pem",
+            user_1 + "/timestamp.bin"
+          );
 
-
-        cout << "\n[6] RECEIVE MESSAGE\n";
+        cout << "\n[7] RECEIVE MESSAGE\n";
         CryptoManager::receiveMessage(user_2);
 
         cout << "\n========== END DEMO ==========\n";
@@ -125,6 +133,46 @@ int main(int argc, char* argv[]) {
         std::filesystem::remove_all(user_2);
         std::filesystem::remove_all("inbox");
         std::filesystem::remove_all("data");
+        return 0;
+    }
+    if (mode == "tsa"){
+            cout << "\n=== TSA DEMO ===\n";
+
+            string file = "message.txt";
+
+            cout << "[1] Creating timestamp...\n";
+            CryptoManager::createTimestamp(
+                file,
+                "tsa/private.pem",
+                "timestamp.bin"
+            );
+
+            cout << "[2] Verifying timestamp...\n";
+            bool ok = CryptoManager::verifyTimestamp(
+                file,
+                "timestamp.bin",
+                "tsa/public.pem"
+            );
+
+            cout << (ok ? "[OK] VALID\n" : "[FAIL]\n");
+
+            return 0;
+    }
+
+    if (mode == "tsa_init") {
+    CryptoManager::generateTSAKeyPair();
+    return 0;
+    }
+
+    if (mode == "verify") {
+        string file = "message.txt";
+        bool ok = CryptoManager::verifyTimestamp(
+            file,
+            "timestamp.bin",
+            "tsa/public.pem"
+        );
+        cout << (ok ? "[OK] VALID\n" : "[FAIL]\n");
+
         return 0;
     }
 

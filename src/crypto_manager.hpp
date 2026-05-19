@@ -33,5 +33,11 @@ public:
 
     static std::vector<unsigned char> readFile(const std::string& path);
     static bool writeFile(const std::string& path, const std::vector<unsigned char>& data);
+
+    static bool verifyTimestamp(const std::string& filePath, const std::string& timestampFile, const std::string& tsaPublicKey);
+
+    static bool createTimestamp(const std::string& filePath, const std::string& tsaPrivateKey, const std::string& outFile);
+
+    static bool generateTSAKeyPair();
 };
 

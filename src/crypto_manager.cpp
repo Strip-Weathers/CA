@@ -632,6 +632,20 @@ bool CryptoManager::sendMessage(
     try
     {
         filesystem::copy_file(
+            user1 + "/timestamp.bin",
+            user2 + "/inbox/timestamp.bin",
+            filesystem::copy_options::overwrite_existing
+        );
+
+        std::cout << "File copied\n";
+    }
+    catch (const filesystem::filesystem_error& e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+    try
+    {
+        filesystem::copy_file(
             encryptedPath,
             user2 + "/inbox/message.bin",
             filesystem::copy_options::overwrite_existing
@@ -861,6 +875,15 @@ bool CryptoManager::receiveMessage(
         return false;
     }
     cout << "[OK] Signature valid\n";
+
+    cout << "[TSA] Verifying timestamp...\n";
+    bool ok = CryptoManager::verifyTimestamp(
+        user2 + "/inbox/message.txt",
+        user2 + "/inbox/timestamp.bin",
+        "tsa/public.pem"
+    );
+
+    cout << (ok ? "[OK] VALID\n" : "[FAIL]\n");
 
     bool valid2 = verifyCertificate(
     user2 + "/inbox/" + user1 + "_public.pem",
@@ -1321,5 +1344,220 @@ bool CryptoManager::writeFile(const string& path, const vector<unsigned char>& d
     if (!file) return false;
 
     file.write(reinterpret_cast<const char*>(data.data()), data.size());
+    return true;
+}
+
+bool CryptoManager::createTimestamp(
+    const std::string& filePath,
+    const std::string& tsaPrivateKey,
+    const std::string& outFile
+){
+    auto data = readFile(filePath);
+    if (data.empty()) {
+        cerr << "[ERROR] File empty\n";
+        return false;
+    }
+
+    // 1. HASH
+    unsigned char hash[32];
+    unsigned int len = 0;
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr);
+    EVP_DigestUpdate(ctx, data.data(), data.size());
+    EVP_DigestFinal_ex(ctx, hash, &len);
+    EVP_MD_CTX_free(ctx);
+
+    // 2. SAFE TIMESTAMP (deterministic)
+    uint64_t now = static_cast<uint64_t>(time(nullptr));
+
+    // 3. PACKET = hash + timestamp
+    vector<unsigned char> packet;
+    packet.insert(packet.end(), hash, hash + 32);
+
+    packet.insert(packet.end(),
+        reinterpret_cast<unsigned char*>(&now),
+        reinterpret_cast<unsigned char*>(&now) + sizeof(now)
+    );
+
+    // 4. SIGN packet using existing function
+    string tmpPacket = "tsa_tmp_packet.bin";
+    string tmpSig = "tsa_tmp_sig.bin";
+
+    if (!writeFile(tmpPacket, packet)) {
+        cerr << "[ERROR] Cannot write packet\n";
+        return false;
+    }
+
+    if (!signFile(tmpPacket, tsaPrivateKey, tmpSig)) {
+        cerr << "[ERROR] TSA signing failed\n";
+        return false;
+    }
+
+    auto signature = readFile(tmpSig);
+    if (signature.empty()) {
+        cerr << "[ERROR] Signature empty\n";
+        return false;
+    }
+
+    // 5. FINAL = packet + signature
+    vector<unsigned char> out = packet;
+    out.insert(out.end(), signature.begin(), signature.end());
+
+    bool ok = writeFile(outFile, out);
+
+    filesystem::remove(tmpPacket);
+    filesystem::remove(tmpSig);
+
+    return ok;
+}
+
+bool CryptoManager::verifyTimestamp(
+    const std::string& filePath,
+    const std::string& timestampFile,
+    const std::string& tsaPublicKey
+){
+    auto data = readFile(filePath);
+    auto ts = readFile(timestampFile);
+
+    if (ts.empty()) {
+        cerr << "[ERROR] Empty timestamp\n";
+        return false;
+    }
+
+    // 1. recompute hash
+    unsigned char hash[32];
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+
+    EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr);
+    EVP_DigestUpdate(ctx, data.data(), data.size());
+    EVP_DigestFinal_ex(ctx, hash, nullptr);
+
+    EVP_MD_CTX_free(ctx);
+
+    // 2. parse packet
+    const size_t packetSize = 32 + sizeof(uint64_t);
+
+    if (ts.size() <= packetSize) {
+        cerr << "[ERROR] Corrupted timestamp\n";
+        return false;
+    }
+
+    vector<unsigned char> packet(ts.begin(), ts.begin() + packetSize);
+    vector<unsigned char> signature(ts.begin() + packetSize, ts.end());
+
+    // 3. verify signature
+    FILE* fp = fopen(tsaPublicKey.c_str(), "rb");
+    if (!fp) return false;
+
+    EVP_PKEY* pubKey = PEM_read_PUBKEY(fp, nullptr, nullptr, nullptr);
+    fclose(fp);
+
+    if (!pubKey) return false;
+
+    EVP_MD_CTX* vctx = EVP_MD_CTX_new();
+
+    if (EVP_DigestVerifyInit(vctx, nullptr, EVP_sha256(), nullptr, pubKey) != 1) {
+        EVP_MD_CTX_free(vctx);
+        EVP_PKEY_free(pubKey);
+        return false;
+    }
+
+    if (EVP_DigestVerifyUpdate(vctx, packet.data(), packet.size()) != 1) {
+        EVP_MD_CTX_free(vctx);
+        EVP_PKEY_free(pubKey);
+        return false;
+    }
+
+    int ok = EVP_DigestVerifyFinal(
+        vctx,
+        signature.data(),
+        signature.size()
+    );
+
+    EVP_MD_CTX_free(vctx);
+    EVP_PKEY_free(pubKey);
+
+    if (ok != 1) {
+        cerr << "[ERROR] INVALID TSA SIGNATURE\n";
+        return false;
+    }
+
+    // 4. verify hash
+    if (!equal(hash, hash + 32, packet.begin())) {
+        cerr << "[ERROR] HASH MISMATCH\n";
+        return false;
+    }
+
+    // 5. extract timestamp
+    time_t savedTime;
+
+    memcpy(
+        &savedTime,
+        packet.data() + 32,
+        sizeof(time_t)
+    );
+
+    time_t now = time(nullptr);
+
+    double diff = difftime(now, savedTime);
+
+    cout << "[INFO] Timestamp age: "
+        << diff << " seconds\n";
+
+    if (diff > 500) {
+        cerr << "[ERROR] Timestamp expired\n";
+        return false;
+    }
+
+    cout << "[OK] Timestamp valid\n";
+    return true;
+}
+
+bool CryptoManager::generateTSAKeyPair()
+{
+    cout << "\n========== TSA ==========\n";
+    cout << "[TSA] Generating key pair...\n";
+
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr);
+    if (!ctx) return false;
+
+    if (EVP_PKEY_keygen_init(ctx) <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        return false;
+    }
+
+    if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        return false;
+    }
+
+    EVP_PKEY* pkey = nullptr;
+    if (EVP_PKEY_keygen(ctx, &pkey) <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        return false;
+    }
+
+    filesystem::create_directories("tsa");
+
+    FILE* priv = fopen("tsa/private.pem", "wb");
+    FILE* pub  = fopen("tsa/public.pem", "wb");
+
+    if (!priv || !pub) {
+        EVP_PKEY_free(pkey);
+        EVP_PKEY_CTX_free(ctx);
+        return false;
+    }
+
+    PEM_write_PrivateKey(priv, pkey, nullptr, nullptr, 0, nullptr, nullptr);
+    PEM_write_PUBKEY(pub, pkey);
+
+    fclose(priv);
+    fclose(pub);
+
+    EVP_PKEY_free(pkey);
+    EVP_PKEY_CTX_free(ctx);
+
+    cout << "[OK] TSA keys created\n";
     return true;
 }
