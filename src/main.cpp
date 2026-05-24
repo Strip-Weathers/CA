@@ -22,8 +22,9 @@ int main(int argc, char* argv[]) {
 
         waitStep();
 
-        cout << "\n[1] CA KEYGEN\n";
+        cout << "\n[1] CA and TSA KEYGEN\n";
         CryptoManager::generateCAKeyPair();
+        CryptoManager::generateTSAKeyPair();
         waitStep();
 
         cout << "\n PODAJ IMIE SENDERA\n";
@@ -88,6 +89,8 @@ int main(int argc, char* argv[]) {
             std::filesystem::remove_all(user_2);
             std::filesystem::remove_all("inbox");
             std::filesystem::remove_all("data");
+            std::filesystem::remove_all("tsa");
+            std::filesystem::remove_all("ca");
             return 1;}
         requestCert(user_2);
         if (!git) {
@@ -95,6 +98,8 @@ int main(int argc, char* argv[]) {
             std::filesystem::remove_all(user_2);
             std::filesystem::remove_all("inbox");
             std::filesystem::remove_all("data");
+            std::filesystem::remove_all("tsa");
+            std::filesystem::remove_all("ca");
             return 1;}
         waitStep();
 
@@ -105,16 +110,7 @@ int main(int argc, char* argv[]) {
             user_1 + "/" + "signature.sig"
         );
         waitStep();
-
-
-        cout << "\n[5] SEND MESSAGE\n";
-        CryptoManager::sendMessage(
-            user_1,
-            user_2,
-            user_1 + "/" + "message.txt"
-        );
-        waitStep();
-        cout << "\n[6] GEN TIMESTAMP\n";
+        cout << "\n[5] GEN TIMESTAMP\n";
         cout << "Request timestamp creation...\n";
         cout << "[TSA] Creating timestamp...\n";
         cout << "Timestamp received...\n";
@@ -123,6 +119,15 @@ int main(int argc, char* argv[]) {
             "tsa/private.pem",
             user_1 + "/timestamp.bin"
           );
+        waitStep();
+
+        cout << "\n[6] SEND MESSAGE\n";
+        CryptoManager::sendMessage(
+            user_1,
+            user_2,
+            user_1 + "/" + "message.txt"
+        );
+        waitStep();
 
         cout << "\n[7] RECEIVE MESSAGE\n";
         CryptoManager::receiveMessage(user_2);
@@ -133,6 +138,8 @@ int main(int argc, char* argv[]) {
         std::filesystem::remove_all(user_2);
         std::filesystem::remove_all("inbox");
         std::filesystem::remove_all("data");
+        std::filesystem::remove_all("tsa");
+        std::filesystem::remove_all("ca");
         return 0;
     }
     if (mode == "tsa"){

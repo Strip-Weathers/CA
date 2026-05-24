@@ -611,8 +611,6 @@ bool CryptoManager::sendMessage(
     string senderPubKey =
         user1 + "/" + senderName + "_public.pem";
 
-    filesystem::create_directories("inbox");
-
     cout << "[FORWARDED] Message forwarded ( " << user1 << " -> " << user2 << " )\n";
 
     try
@@ -1358,7 +1356,6 @@ bool CryptoManager::createTimestamp(
         return false;
     }
 
-    // 1. HASH
     unsigned char hash[32];
     unsigned int len = 0;
 
@@ -1368,10 +1365,8 @@ bool CryptoManager::createTimestamp(
     EVP_DigestFinal_ex(ctx, hash, &len);
     EVP_MD_CTX_free(ctx);
 
-    // 2. SAFE TIMESTAMP (deterministic)
     uint64_t now = static_cast<uint64_t>(time(nullptr));
 
-    // 3. PACKET = hash + timestamp
     vector<unsigned char> packet;
     packet.insert(packet.end(), hash, hash + 32);
 
@@ -1380,7 +1375,6 @@ bool CryptoManager::createTimestamp(
         reinterpret_cast<unsigned char*>(&now) + sizeof(now)
     );
 
-    // 4. SIGN packet using existing function
     string tmpPacket = "tsa_tmp_packet.bin";
     string tmpSig = "tsa_tmp_sig.bin";
 
@@ -1400,7 +1394,6 @@ bool CryptoManager::createTimestamp(
         return false;
     }
 
-    // 5. FINAL = packet + signature
     vector<unsigned char> out = packet;
     out.insert(out.end(), signature.begin(), signature.end());
 
@@ -1425,7 +1418,6 @@ bool CryptoManager::verifyTimestamp(
         return false;
     }
 
-    // 1. recompute hash
     unsigned char hash[32];
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
 
@@ -1435,7 +1427,6 @@ bool CryptoManager::verifyTimestamp(
 
     EVP_MD_CTX_free(ctx);
 
-    // 2. parse packet
     const size_t packetSize = 32 + sizeof(uint64_t);
 
     if (ts.size() <= packetSize) {
@@ -1446,7 +1437,6 @@ bool CryptoManager::verifyTimestamp(
     vector<unsigned char> packet(ts.begin(), ts.begin() + packetSize);
     vector<unsigned char> signature(ts.begin() + packetSize, ts.end());
 
-    // 3. verify signature
     FILE* fp = fopen(tsaPublicKey.c_str(), "rb");
     if (!fp) return false;
 
@@ -1483,13 +1473,11 @@ bool CryptoManager::verifyTimestamp(
         return false;
     }
 
-    // 4. verify hash
     if (!equal(hash, hash + 32, packet.begin())) {
         cerr << "[ERROR] HASH MISMATCH\n";
         return false;
     }
 
-    // 5. extract timestamp
     time_t savedTime;
 
     memcpy(

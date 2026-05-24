@@ -1,5 +1,10 @@
 # CA
+uruchomienie:
+mkdir build
+cmake -S . -B build
+cmake --build build
+./build/exe demo
 
-
-find outbox inbox temp keys ca -type f -delete
+usuwanie:
+find outbox inbox temp keys ca tsp -type f -delete
 rm -f *.bin *.sig *.enc *.key *.data message.txt
